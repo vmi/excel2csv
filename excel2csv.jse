@@ -1,0 +1,101 @@
+function echo(msg) {
+  WScript.Echo(msg);
+}
+
+function help() {
+  echo("Generate CSV files from Excel file.");
+  echo("");
+  echo("Usage: excel2csv.jse [-q] EXCEL_FILE [SHEET_NAME1=CSV_FILE1 ...]");
+  echo("");
+  echo("  -q = non visible mode.");
+  WScript.Quit();
+}
+
+var args = WScript.Arguments;
+var argPos = 0;
+var argLen = args.length;
+var visible = true;
+if (argLen == 0) {
+  help();
+} else if (args.Item(argPos) == '-q') {
+  argPos++;
+  argLen--;
+  if (argLen == 0) {
+    help();
+  }
+  visible = false;
+  echo("Non visible mode.");
+}
+var excelFile = args.Item(argPos);
+argPos++;
+argLen--;
+
+var fso = WScript.CreateObject("Scripting.FileSystemObject");
+var excel = WScript.CreateObject("Excel.Application");
+excel.Visible = visible;
+excel.DisplayAlerts = false;
+
+// XlFileFormat
+var xlCSV = 0x06;
+
+function handleExcel(handler) {
+  var excelPath = fso.GetAbsolutePathName(excelFile);
+  echo("Excel File: " + excelPath);
+  var book = excel.Workbooks.Open(excelPath);
+  try {
+    var sheets = book.Sheets;
+    handler(book, sheets);
+  } finally {
+    book.Close(false);
+  }
+}
+
+function showSheets() {
+  handleExcel(function(book, sheets) {
+    for (var i = 1; i <= sheets.Count; i++) {
+      var sheet = sheets.Item(i);
+      echo("- Sheet Name: [" + sheet.Name + "]");
+    }
+  });
+}
+
+function excel2csv() {
+  handleExcel(function(book, sheets) {
+    for (var i = 0; i < argLen; i++) {
+      var pair = args.Item(argPos + i).split("=", 2);
+      var sheetName = pair[0];
+      var csvFile = pair[1];
+      if (!csvFile.match(/\.csv$/)) {
+        csvFile += ".csv";
+      }
+      try {
+        var sheet = sheets.Item(sheetName);
+        sheet.Activate();
+        var csvPath = fso.GetAbsolutePathName(csvFile);
+        book.SaveAs(csvPath, // FileName
+                    xlCSV,   // FileFormat
+                    null,    // Password
+                    null,    // WriteResPassword
+                    false,   // ReadOnlyRecommended
+                    false,   // CreateBackup
+                    1,       // AccessMode = xlNoChange
+                    2);      // ConflictResolution = xlLocalSessionChanges
+        echo("Generated: [" + sheetName + "] => " + csvPath);
+      } catch (e) {
+        if (e.name === 'RangeError') {
+          echo("Error: The sheet \"" + pair[0] + "\" does not exist.");
+        }
+      }
+    }
+  });
+}
+
+try {
+  if (argLen > 0) {
+    excel2csv();
+  } else {
+    showSheets();
+  }
+} finally {
+  excel.Quit();
+}
